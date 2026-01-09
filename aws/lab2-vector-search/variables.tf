@@ -47,3 +47,33 @@ variable "workshop_mode" {
   type        = bool
   default     = false
 }
+
+# Vector database selection
+variable "vector_db" {
+  description = "Vector database to use: mongodb or elasticsearch"
+  type        = string
+  default     = "mongodb"
+}
+
+# Elasticsearch configuration
+variable "elasticsearch_endpoint" {
+  description = "Elasticsearch endpoint URL (required when vector_db = elasticsearch)"
+  type        = string
+  default     = ""
+}
+
+variable "elasticsearch_api_key" {
+  description = "Elasticsearch API key (required when vector_db = elasticsearch)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "elasticsearch_index" {
+  description = "Elasticsearch index name for vector storage"
+  type        = string
+  default     = "documents-vector"
+}
+
+# Note: elasticsearch_connector_username/password removed
+# Using HTTP Sink V2 with API key in Authorization header instead

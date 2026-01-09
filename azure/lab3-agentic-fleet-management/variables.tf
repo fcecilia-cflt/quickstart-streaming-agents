@@ -40,3 +40,35 @@ variable "zapier_sse_endpoint" {
   type        = string
   sensitive   = true
 }
+
+# Vector database selection for Lab3
+variable "vector_db" {
+  description = "Vector database for LAB3 (mongodb or elasticsearch)"
+  type        = string
+  default     = "mongodb"
+  validation {
+    condition     = contains(["mongodb", "elasticsearch"], var.vector_db)
+    error_message = "vector_db must be 'mongodb' or 'elasticsearch'"
+  }
+}
+
+# Elasticsearch variables (used when vector_db = "elasticsearch")
+variable "elasticsearch_endpoint_lab3" {
+  description = "Elasticsearch endpoint URL (e.g., https://my-cluster.es.eastus.azure.elastic-cloud.com:443)"
+  type        = string
+  sensitive   = true
+  default     = "https://workshop-cluster.es.eastus.azure.elastic-cloud.com:443"
+}
+
+variable "elasticsearch_api_key_lab3" {
+  description = "Elasticsearch API key for authentication"
+  type        = string
+  sensitive   = true
+  default     = "PLACEHOLDER_API_KEY"
+}
+
+variable "elasticsearch_index_lab3" {
+  description = "Elasticsearch index name for vector search"
+  type        = string
+  default     = "documents-vector"
+}

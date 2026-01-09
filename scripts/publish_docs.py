@@ -41,6 +41,8 @@ try:
 except ImportError:
     CLEAR_MONGODB_AVAILABLE = False
 
+from .common.clear_elasticsearch import extract_elasticsearch_credentials, clear_elasticsearch_index
+
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
     """Set up logging configuration."""
@@ -410,6 +412,92 @@ def find_docs_directory(project_root: Path, lab: int, cloud_provider: str) -> Op
     return None
 
 
+def detect_vector_db(cloud_provider: str, project_root: Path) -> str:
+    """
+    Detect which vector database is configured for Lab3.
+
+    Args:
+        cloud_provider: Cloud provider (aws or azure)
+        project_root: Project root directory
+
+    Returns:
+        'mongodb' or 'elasticsearch' (defaults to 'mongodb')
+    """
+    tfvars_path = project_root / cloud_provider / "lab3-agentic-fleet-management" / "terraform.tfvars"
+
+    if not tfvars_path.exists():
+        return "mongodb"
+
+    try:
+        with open(tfvars_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('vector_db'):
+                    if '=' in line:
+                        _, value = line.split('=', 1)
+                        value = value.strip().strip('"').strip("'")
+                        if value in ['mongodb', 'elasticsearch']:
+                            return value
+    except Exception:
+        pass
+
+    return "mongodb"
+
+
+def prompt_clear_elasticsearch(cloud_provider: str, project_root: Path, logger: logging.Logger) -> bool:
+    """
+    Prompt user to clear Elasticsearch index and perform clearing if confirmed.
+
+    Args:
+        cloud_provider: Cloud provider (aws or azure)
+        project_root: Project root directory
+        logger: Logger instance
+
+    Returns:
+        True if successful or skipped, False if failed
+    """
+    # Ask user if they want to clear Elasticsearch
+    print("\n" + "=" * 60)
+    print("ELASTICSEARCH INDEX MANAGEMENT")
+    print("=" * 60)
+    try:
+        response = input("Clear existing documents from Elasticsearch before publishing? (y/n): ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\n\nSkipping Elasticsearch clearing.")
+        return True
+
+    if response not in ['y', 'yes']:
+        print("Skipping Elasticsearch clearing.")
+        return True
+
+    # User wants to clear - proceed with clearing
+    try:
+        logger.info("Extracting Elasticsearch credentials...")
+        es_creds = extract_elasticsearch_credentials(cloud_provider, project_root)
+
+        logger.info(f"Connecting to Elasticsearch (index: {es_creds['index']})...")
+        deleted_count = clear_elasticsearch_index(
+            endpoint=es_creds['endpoint'],
+            api_key=es_creds['api_key'],
+            index=es_creds['index']
+        )
+
+        print(f"\n{'=' * 60}")
+        print("ELASTICSEARCH INDEX CLEARED")
+        print(f"{'=' * 60}")
+        print(f"Index:             {es_creds['index']}")
+        print(f"Documents deleted: {deleted_count}")
+        print(f"{'=' * 60}\n")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to clear Elasticsearch: {e}")
+        print(f"\nWarning: Could not clear Elasticsearch index: {e}")
+        print("Proceeding with publishing documents anyway...")
+        return True
+
+
 def prompt_clear_mongodb(cloud_provider: str, project_root: Path, logger: logging.Logger) -> bool:
     """
     Prompt user to clear MongoDB collection and perform clearing if confirmed.
@@ -610,11 +698,24 @@ Examples:
         logger.error(f"Failed to extract Kafka credentials: {e}")
         return 1
 
-    # Prompt to clear MongoDB collection (if not in dry-run mode)
+    # Prompt to clear vector database (if not in dry-run mode)
     if not args.dry_run:
-        if not prompt_clear_mongodb(cloud_provider, project_root, logger):
-            logger.error("MongoDB clearing failed")
-            return 1
+        # For Lab3, detect which vector database is configured
+        if lab == 3:
+            vector_db = detect_vector_db(cloud_provider, project_root)
+            if vector_db == "elasticsearch":
+                if not prompt_clear_elasticsearch(cloud_provider, project_root, logger):
+                    logger.error("Elasticsearch clearing failed")
+                    return 1
+            else:
+                if not prompt_clear_mongodb(cloud_provider, project_root, logger):
+                    logger.error("MongoDB clearing failed")
+                    return 1
+        else:
+            # Lab2 always uses MongoDB
+            if not prompt_clear_mongodb(cloud_provider, project_root, logger):
+                logger.error("MongoDB clearing failed")
+                return 1
 
     # Initialize publisher
     try:

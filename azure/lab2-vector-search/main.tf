@@ -26,8 +26,10 @@ locals {
 # Lab2 uses the shared LLM infrastructure from core
 # LLM embedding and text generation models are available via core terraform state
 
-# Create MongoDB Flink Connection for vector search
+# Create MongoDB Flink Connection for vector search (only when vector_db = mongodb)
 resource "confluent_flink_connection" "mongodb_connection" {
+  count = var.vector_db == "mongodb" ? 1 : 0
+
   organization {
     id = data.terraform_remote_state.core.outputs.confluent_organization_id
   }
@@ -199,9 +201,9 @@ resource "confluent_flink_statement" "queries_embed_table" {
   depends_on = [confluent_flink_statement.queries_table]
 }
 
-# MongoDB Sink Connector for streaming documents_embed to MongoDB
+# MongoDB Sink Connector for streaming documents_embed to MongoDB (only when vector_db = mongodb)
 resource "confluent_connector" "mongodb_sink" {
-  count = var.workshop_mode ? 0 : 1
+  count = !var.workshop_mode && var.vector_db == "mongodb" ? 1 : 0
 
   environment {
     id = data.terraform_remote_state.core.outputs.confluent_environment_id
@@ -323,8 +325,9 @@ resource "confluent_flink_statement" "queries_insert_sample" {
   ]
 }
 
-# Create documents_vectordb table (MongoDB vector store external table)
+# Create documents_vectordb table (MongoDB vector store external table) - only when vector_db = mongodb
 resource "confluent_flink_statement" "documents_vectordb_create_table" {
+  count          = var.vector_db == "mongodb" ? 1 : 0
   statement_name = "documents-vectordb-create-table"
 
   organization {
@@ -357,8 +360,108 @@ resource "confluent_flink_statement" "documents_vectordb_create_table" {
   }
 
   depends_on = [
-    confluent_flink_connection.mongodb_connection,
+    confluent_flink_connection.mongodb_connection[0],
     confluent_connector.mongodb_sink[0],
+    confluent_flink_statement.documents_insert_sample[0]
+  ]
+}
+
+# =============================================================================
+# ELASTICSEARCH RESOURCES (when vector_db = elasticsearch)
+# =============================================================================
+
+# Create Elasticsearch Flink Connection for vector search (for READING)
+resource "confluent_flink_connection" "elasticsearch_connection" {
+  count = var.vector_db == "elasticsearch" ? 1 : 0
+
+  organization {
+    id = data.terraform_remote_state.core.outputs.confluent_organization_id
+  }
+  environment {
+    id = data.terraform_remote_state.core.outputs.confluent_environment_id
+  }
+  compute_pool {
+    id = data.terraform_remote_state.core.outputs.confluent_flink_compute_pool_id
+  }
+  principal {
+    id = data.terraform_remote_state.core.outputs.app_manager_service_account_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.confluent_flink_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.app_manager_flink_api_key
+    secret = data.terraform_remote_state.core.outputs.app_manager_flink_api_secret
+  }
+
+  display_name = "elasticsearch-connection"
+  type         = "ELASTIC"
+  endpoint     = var.elasticsearch_endpoint
+  api_key      = var.elasticsearch_api_key
+
+  lifecycle {
+    prevent_destroy = false
+  }
+}
+
+# TEMPORARY WORKAROUND: Elasticsearch connector created via CLI (not Terraform)
+#
+# Why: HTTP Sink V2 API key authentication only works via Confluent CLI.
+#      The Terraform API silently rejects all auth-related properties.
+#      Elasticsearch Sink Connector doesn't support API keys (only username/password).
+#
+# What: deploy.py creates the connector after Terraform completes.
+#       destroy.py deletes the connector before Terraform destroy.
+#
+# TODO: Switch to Terraform-managed Elasticsearch Sink V2 when it supports
+#       API key authentication. Remove CLI workaround from deploy.py/destroy.py.
+#
+# See: scripts/common/elasticsearch_connector.py
+
+# Create documents_vectordb table (Elasticsearch vector store external table) - only when vector_db = elasticsearch
+resource "confluent_flink_statement" "documents_vectordb_elasticsearch" {
+  count          = var.vector_db == "elasticsearch" ? 1 : 0
+  statement_name = "documents-vectordb-elasticsearch-create-table"
+
+  organization {
+    id = data.terraform_remote_state.core.outputs.confluent_organization_id
+  }
+  environment {
+    id = data.terraform_remote_state.core.outputs.confluent_environment_id
+  }
+  compute_pool {
+    id = data.terraform_remote_state.core.outputs.confluent_flink_compute_pool_id
+  }
+  principal {
+    id = data.terraform_remote_state.core.outputs.app_manager_service_account_id
+  }
+  rest_endpoint = data.terraform_remote_state.core.outputs.confluent_flink_rest_endpoint
+  credentials {
+    key    = data.terraform_remote_state.core.outputs.app_manager_flink_api_key
+    secret = data.terraform_remote_state.core.outputs.app_manager_flink_api_secret
+  }
+
+  statement = <<-EOT
+    CREATE TABLE IF NOT EXISTS documents_vectordb (
+      document_id STRING,
+      chunk STRING,
+      embedding ARRAY<FLOAT>
+    ) WITH (
+      'connector' = 'elastic',
+      'elastic.connection' = 'elasticsearch-connection',
+      'elastic.index' = '${var.elasticsearch_index}'
+    );
+  EOT
+
+  properties = {
+    "sql.current-catalog"  = data.terraform_remote_state.core.outputs.confluent_environment_display_name
+    "sql.current-database" = data.terraform_remote_state.core.outputs.confluent_kafka_cluster_display_name
+  }
+
+  lifecycle {
+    prevent_destroy = false
+  }
+
+  depends_on = [
+    confluent_flink_connection.elasticsearch_connection[0],
     confluent_flink_statement.documents_insert_sample[0]
   ]
 }
@@ -399,7 +502,8 @@ resource "confluent_flink_statement" "documents_embed_insert_into" {
 
   depends_on = [
     confluent_flink_statement.documents_embed_table[0],
-    confluent_flink_statement.documents_vectordb_create_table
+    confluent_flink_statement.documents_vectordb_create_table,
+    confluent_flink_statement.documents_vectordb_elasticsearch
   ]
 }
 
@@ -477,6 +581,7 @@ resource "confluent_flink_statement" "search_results_create_table" {
 
   depends_on = [
     confluent_flink_statement.documents_vectordb_create_table,
+    confluent_flink_statement.documents_vectordb_elasticsearch,
     confluent_flink_statement.queries_embed_insert_into
   ]
 }

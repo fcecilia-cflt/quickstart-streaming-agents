@@ -16,7 +16,9 @@ from scripts.common.credentials import (
     load_credentials_json,
     generate_confluent_api_keys
 )
+from scripts.common.elasticsearch_connector import ensure_elasticsearch_connector
 from scripts.common.login_checks import check_confluent_login, check_cloud_cli_login
+# Note: decode_elasticsearch_api_key removed - using HTTP Sink V2 with API key header instead
 from scripts.common.terraform import get_project_root
 from scripts.common.terraform_runner import run_terraform
 from scripts.common.tfvars import write_tfvars_for_deployment
@@ -33,6 +35,81 @@ AZURE_REGIONS = [
     "eastus2", "westus", "canadacentral",
     "northeurope", "westeurope", "eastasia", "centralindia"
 ]
+
+
+def get_terraform_outputs(env_path):
+    """Get Terraform outputs as a dictionary."""
+    import json
+    result = subprocess.run(
+        ["terraform", "output", "-json"],
+        cwd=env_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        print(f"Warning: Failed to get Terraform outputs from {env_path}")
+        return {}
+
+    try:
+        outputs = json.loads(result.stdout)
+        # Extract values from Terraform output format {"key": {"value": "..."}}
+        return {k: v.get("value") for k, v in outputs.items()}
+    except json.JSONDecodeError:
+        return {}
+
+
+def deploy_elasticsearch_connector(root, cloud, creds):
+    """
+    Deploy Elasticsearch HTTP Sink V2 connector via CLI.
+
+    This is called after Terraform deploys lab2-vector-search when Elasticsearch
+    is selected. The connector requires CLI deployment because API key authentication
+    is only supported via Confluent CLI, not Terraform API.
+    """
+    # Get core Terraform outputs (contains environment ID, cluster ID, Kafka API keys)
+    core_path = root / cloud / "core"
+    core_outputs = get_terraform_outputs(core_path)
+
+    if not core_outputs:
+        print("Error: Could not get Terraform outputs from core module")
+        return False
+
+    # Get required values
+    environment_id = core_outputs.get("confluent_environment_id")
+    cluster_id = core_outputs.get("confluent_kafka_cluster_id")
+    kafka_api_key = core_outputs.get("app_manager_kafka_api_key")
+    kafka_api_secret = core_outputs.get("app_manager_kafka_api_secret")
+
+    if not all([environment_id, cluster_id, kafka_api_key, kafka_api_secret]):
+        print("Error: Missing required Terraform outputs from core module")
+        print(f"  environment_id: {environment_id}")
+        print(f"  cluster_id: {cluster_id}")
+        print(f"  kafka_api_key: {'set' if kafka_api_key else 'missing'}")
+        print(f"  kafka_api_secret: {'set' if kafka_api_secret else 'missing'}")
+        return False
+
+    # Get Elasticsearch credentials (from creds dict or environment)
+    # Handle both TF_VAR_ prefixed and non-prefixed keys
+    elasticsearch_endpoint = creds.get("elasticsearch_endpoint") or creds.get("TF_VAR_elasticsearch_endpoint") or os.environ.get("TF_VAR_elasticsearch_endpoint")
+    elasticsearch_api_key = creds.get("elasticsearch_api_key") or creds.get("TF_VAR_elasticsearch_api_key") or os.environ.get("TF_VAR_elasticsearch_api_key")
+    elasticsearch_index = creds.get("elasticsearch_index") or creds.get("TF_VAR_elasticsearch_index") or os.environ.get("TF_VAR_elasticsearch_index") or "documents-vector"
+
+    if not elasticsearch_endpoint or not elasticsearch_api_key:
+        print("Error: Missing Elasticsearch credentials")
+        print(f"  elasticsearch_endpoint: {elasticsearch_endpoint}")
+        print(f"  elasticsearch_api_key: {'set' if elasticsearch_api_key else 'missing'}")
+        return False
+
+    # Create the connector via CLI
+    return ensure_elasticsearch_connector(
+        environment_id=environment_id,
+        cluster_id=cluster_id,
+        kafka_api_key=kafka_api_key,
+        kafka_api_secret=kafka_api_secret,
+        elasticsearch_endpoint=elasticsearch_endpoint,
+        elasticsearch_api_key=elasticsearch_api_key,
+        elasticsearch_index=elasticsearch_index
+    )
 
 
 def main():
@@ -248,16 +325,41 @@ def main():
             set_key(creds_file, "TF_VAR_azure_openai_endpoint", azure_openai_endpoint)
             set_key(creds_file, "TF_VAR_azure_openai_api_key", azure_openai_key)
 
+        # Workshop mode: Vector database selection for Lab3 (no credential prompts, uses defaults)
+        if args.workshop and "lab3-agentic-fleet-management" in envs_to_deploy:
+            print("\n--- Vector Database Selection (Lab3 Workshop Mode) ---")
+            vector_db_options = ["MongoDB (default)", "Elasticsearch"]
+            vector_db_choice = prompt_choice("Select vector database for Lab3:", vector_db_options)
+
+            if vector_db_choice == "Elasticsearch":
+                set_key(creds_file, "TF_VAR_vector_db", "elasticsearch")
+            else:
+                set_key(creds_file, "TF_VAR_vector_db", "mongodb")
+
         # Lab-specific credentials
         if "lab1-tool-calling" in envs_to_deploy or "lab3-agentic-fleet-management" in envs_to_deploy:
             zapier_endpoint = prompt_with_default("Zapier SSE Endpoint (Lab 1 and Lab 3)", creds.get("TF_VAR_zapier_sse_endpoint", ""))
             set_key(creds_file, "TF_VAR_zapier_sse_endpoint", zapier_endpoint)
 
+        # Non-workshop mode: Vector database selection (applies to Lab2 and Lab3)
+        vector_db_choice = "mongodb"  # default
+        if not args.workshop and ("lab2-vector-search" in envs_to_deploy or "lab3-agentic-fleet-management" in envs_to_deploy):
+            print("\n--- Vector Database Selection ---")
+            vector_db_options = ["MongoDB (default)", "Elasticsearch"]
+            vector_db_choice = prompt_choice("Select vector database:", vector_db_options)
+            if vector_db_choice == "Elasticsearch":
+                set_key(creds_file, "TF_VAR_vector_db", "elasticsearch")
+            else:
+                set_key(creds_file, "TF_VAR_vector_db", "mongodb")
+                vector_db_choice = "mongodb"
+
         # MongoDB credentials needed if:
-        # - Lab2 or Lab3 is being deployed in non-workshop mode
+        # - Lab2 or Lab3 is being deployed in non-workshop mode with MongoDB selected
         # In workshop mode, both Lab2 and Lab3 use hardcoded MongoDB credentials
-        needs_mongodb = (("lab2-vector-search" in envs_to_deploy) or \
-                        ("lab3-agentic-fleet-management" in envs_to_deploy)) and not args.workshop
+        needs_mongodb = not args.workshop and (
+            ("lab2-vector-search" in envs_to_deploy or "lab3-agentic-fleet-management" in envs_to_deploy) and
+            vector_db_choice != "Elasticsearch"
+        )
 
         if needs_mongodb:
             mongo_conn = prompt_with_default("MongoDB Connection String (Lab 2 and Lab 3)", creds.get("TF_VAR_mongodb_connection_string", ""))
@@ -267,6 +369,19 @@ def main():
             set_key(creds_file, "TF_VAR_mongodb_username", mongo_user)
             set_key(creds_file, "TF_VAR_mongodb_password", mongo_pass)
 
+        # Elasticsearch credentials needed if Lab2 or Lab3 in non-workshop mode with Elasticsearch selected
+        needs_elasticsearch = not args.workshop and \
+            ("lab2-vector-search" in envs_to_deploy or "lab3-agentic-fleet-management" in envs_to_deploy) and \
+            vector_db_choice == "Elasticsearch"
+
+        if needs_elasticsearch:
+            es_endpoint = prompt_with_default("Elasticsearch Endpoint URL (Lab 2 and Lab 3)", creds.get("TF_VAR_elasticsearch_endpoint", ""))
+            es_api_key = prompt_with_default("Elasticsearch API Key (Lab 2 and Lab 3)", creds.get("TF_VAR_elasticsearch_api_key", ""))
+            set_key(creds_file, "TF_VAR_elasticsearch_endpoint", es_endpoint)
+            set_key(creds_file, "TF_VAR_elasticsearch_api_key", es_api_key)
+            # Note: Using HTTP Sink V2 with API key in Authorization header
+            # No need to decode credentials - API key is used directly
+
         # Set cloud region
         set_key(creds_file, "TF_VAR_cloud_region", region)
 
@@ -275,8 +390,10 @@ def main():
 
         # Step 5.5: Validate configurations (advisory only, never blocks deployment)
         needs_zapier = "lab1-tool-calling" in envs_to_deploy or "lab3-agentic-fleet-management" in envs_to_deploy
-        needs_mongodb = (("lab2-vector-search" in envs_to_deploy or "lab3-agentic-fleet-management" in envs_to_deploy)
-                        and not args.workshop)
+        needs_mongodb = not args.workshop and (
+            ("lab2-vector-search" in envs_to_deploy or "lab3-agentic-fleet-management" in envs_to_deploy) and
+            vector_db_choice != "Elasticsearch"
+        )
 
         if needs_zapier or needs_mongodb:
             print("\n--- Configuration Validation (Advisory Only) ---")
@@ -356,6 +473,16 @@ def main():
             if value:
                 os.environ[key] = value
 
+    # Determine which creds dict to use (testing mode vs interactive)
+    # In testing mode, 'creds' is already defined; in interactive mode, use 'final_creds'
+    deployment_creds = creds if args.testing else final_creds
+
+    # Check if Elasticsearch is selected as vector database
+    is_elasticsearch = (
+        deployment_creds.get("vector_db") == "elasticsearch" or
+        deployment_creds.get("TF_VAR_vector_db") == "elasticsearch"
+    )
+
     print("\n=== Starting Deployment ===")
     for env in envs_to_deploy:
         env_path = root / cloud / env
@@ -366,6 +493,17 @@ def main():
         if not run_terraform(env_path):
             print(f"\nDeployment failed at {env}. Stopping.")
             sys.exit(1)
+
+        # TEMPORARY WORKAROUND: Create Elasticsearch connector via CLI
+        # HTTP Sink V2 API key auth only works via CLI, not Terraform.
+        # TODO: Remove when Elasticsearch Sink V2 supports API key auth.
+        # See: scripts/common/elasticsearch_connector.py
+        if env == "lab2-vector-search" and is_elasticsearch and not args.workshop:
+            print("\n--- Creating Elasticsearch Connector via CLI ---")
+            if not deploy_elasticsearch_connector(root, cloud, deployment_creds):
+                print("\nWarning: Elasticsearch connector creation failed.")
+                print("You can create it manually using: confluent connect cluster create")
+                # Don't fail deployment - connector can be created manually
 
     print("\n✓ All deployments completed successfully!")
 

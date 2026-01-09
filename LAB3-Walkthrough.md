@@ -17,20 +17,27 @@ All of this runs in real time on **Confluent Cloud for Apache Flink**, with no e
 
 ## Prerequisites
 - Zapier remote MCP server ([Setup guide](./assets/pre-setup/Zapier-Setup.md))
-- MongoDB Atlas vector database ([Setup guide](./assets/pre-setup/MongoDB-Setup.md))
+- Vector database - choose one:
+  - MongoDB Atlas ([Setup guide](./assets/pre-setup/MongoDB-Setup.md)) - recommended, free tier available
+  - Elasticsearch ([Setup guide](./assets/pre-setup/Elasticsearch-Setup.md)) - 14-day trial available
 - ⚠️ **IMPORTANT: AWS Users Only:** To access Claude Sonnet 3.7 you must request access to the model by filling out an Anthropic use case form (or someone in your org must have previously done so) for your cloud region. To do so, visit the [Model Catalog](https://console.aws.amazon.com/bedrock/home#/model-catalog), select Claude 3.7 Sonnet and open it it in the Playground, then send a message in the chat - the form will appear automatically. ⚠️
 
 ## Deploy the Demo
 
 Once you have these credentials ready, run the following command and choose **Lab3** (see [main README](./README.md)):
 
-  ```sql no-parse
+  ```bash
   uv run deploy
   ```
-  Then, publish the local event documents to MongoDB by running the following command. Choose 'yes' to clear your MongoDB database of all documents when prompted, if you previously uploaded documents for Lab2:
-```sql
+
+You'll be prompted to select your vector database (MongoDB or Elasticsearch).
+
+Then, publish the local event documents to your vector database:
+```bash
 uv run publish_docs --lab3
 ```
+
+When prompted, choose 'yes' to clear your vector database if you previously uploaded documents for Lab2. The script will automatically detect whether you're using MongoDB or Elasticsearch.
 
 ## Usecase Walkthrough
 

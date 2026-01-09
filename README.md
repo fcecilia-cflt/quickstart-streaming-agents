@@ -36,7 +36,7 @@ Build real-time AI agents with [Confluent Cloud Streaming Agents](https://docs.c
 - [![Sign up for Confluent Cloud](https://img.shields.io/badge/Sign%20up%20for%20Confluent%20Cloud-007BFF?style=for-the-badge&logo=apachekafka&logoColor=white)](https://www.confluent.io/get-started/?utm_campaign=tm.pmm_cd.q4fy25-quickstart-streaming-agents&utm_source=github&utm_medium=demo)
 - **Lab1:** Zapier remote MCP server ([Setup guide](./assets/pre-setup/Zapier-Setup.md))
 - **Lab2:** MongoDB Atlas vector database ([Setup guide](./assets/pre-setup/MongoDB-Setup.md))
-- **Lab3:** Zapier ([Setup guide](./assets/pre-setup/Zapier-Setup.md)) + MongoDB ([Setup guide](./assets/pre-setup/MongoDB-Setup.md))
+- **Lab3:** Zapier ([Setup guide](./assets/pre-setup/Zapier-Setup.md)) + MongoDB ([Setup guide](./assets/pre-setup/MongoDB-Setup.md)) or Elasticsearch ([Setup guide](./assets/pre-setup/Elasticsearch-Setup.md))
 
 **Required tools:**
 
@@ -139,6 +139,11 @@ zapier_sse_endpoint = "https://mcp.zapier.com/api/mcp/s/your-key/sse"  # Lab1 & 
 mongodb_connection_string = "mongodb+srv://cluster0.abc.mongodb.net"  # Lab2 & Lab3
 mongodb_username = "your-db-user"  # Lab2 & Lab3
 mongodb_password = "your-db-pass"  # Lab2 & Lab3
+
+# For Lab3 with Elasticsearch (instead of MongoDB):
+# elasticsearch_endpoint_lab3 = "https://your-cluster.es.region.aws.elastic.cloud:443"
+# elasticsearch_api_key_lab3 = "your-api-key"
+# vector_db = "elasticsearch"
 ```
 
 ### Tear down

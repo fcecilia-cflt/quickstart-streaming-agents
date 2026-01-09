@@ -138,9 +138,13 @@ zapier_sse_endpoint = "{zapier_endpoint}"
 
 
 def generate_lab2_tfvars_content(
-    mongo_conn: str,
-    mongo_user: str,
-    mongo_pass: str
+    mongo_conn: Optional[str] = None,
+    mongo_user: Optional[str] = None,
+    mongo_pass: Optional[str] = None,
+    vector_db: str = "mongodb",
+    elasticsearch_endpoint: Optional[str] = None,
+    elasticsearch_api_key: Optional[str] = None,
+    elasticsearch_index: Optional[str] = None
 ) -> str:
     """
     Generate terraform.tfvars content for Lab2 module.
@@ -150,18 +154,87 @@ def generate_lab2_tfvars_content(
     in variables.tf, so we don't override them here.
 
     Args:
-        mongo_conn: MongoDB connection string
-        mongo_user: MongoDB username
-        mongo_pass: MongoDB password
+        mongo_conn: MongoDB connection string (for MongoDB)
+        mongo_user: MongoDB username (for MongoDB)
+        mongo_pass: MongoDB password (for MongoDB)
+        vector_db: Vector database to use (mongodb or elasticsearch)
+        elasticsearch_endpoint: Elasticsearch endpoint URL (for Elasticsearch)
+        elasticsearch_api_key: Elasticsearch API key (for Elasticsearch)
+        elasticsearch_index: Elasticsearch index name (for Elasticsearch)
 
     Returns:
         Formatted terraform.tfvars content
     """
-    return f"""# Lab2 Configuration
-mongodb_connection_string = "{mongo_conn}"
-mongodb_username = "{mongo_user}"
-mongodb_password = "{mongo_pass}"
+    content = "# Lab2 Configuration\n"
+
+    # Add vector_db selection (always write when not default)
+    if vector_db and vector_db != "mongodb":
+        content += f'vector_db = "{vector_db}"\n'
+
+    if vector_db == "mongodb":
+        # MongoDB configuration
+        if mongo_conn:
+            content += f'mongodb_connection_string = "{mongo_conn}"\n'
+        if mongo_user:
+            content += f'mongodb_username = "{mongo_user}"\n'
+        if mongo_pass:
+            content += f'mongodb_password = "{mongo_pass}"\n'
+    elif vector_db == "elasticsearch":
+        # Elasticsearch configuration
+        # Note: Using HTTP Sink V2 with API key in Authorization header
+        if elasticsearch_endpoint:
+            content += f'elasticsearch_endpoint = "{elasticsearch_endpoint}"\n'
+        if elasticsearch_api_key:
+            content += f'elasticsearch_api_key = "{elasticsearch_api_key}"\n'
+        if elasticsearch_index:
+            content += f'elasticsearch_index = "{elasticsearch_index}"\n'
+
+    return content
+
+
+def generate_lab3_tfvars_content(
+    zapier_endpoint: str,
+    workshop_mode: bool = False,
+    vector_db: str = "mongodb",
+    elasticsearch_endpoint: Optional[str] = None,
+    elasticsearch_api_key: Optional[str] = None,
+    elasticsearch_index: Optional[str] = None
+) -> str:
+    """
+    Generate terraform.tfvars content for Lab3 module.
+
+    Note: cloud_region is inherited from core via terraform_remote_state.
+
+    Args:
+        zapier_endpoint: Zapier MCP SSE endpoint URL
+        workshop_mode: Whether workshop mode is enabled
+        vector_db: Vector database to use (mongodb or elasticsearch)
+        elasticsearch_endpoint: Elasticsearch endpoint URL (workshop mode + elasticsearch)
+        elasticsearch_api_key: Elasticsearch API key (workshop mode + elasticsearch)
+        elasticsearch_index: Elasticsearch index name (workshop mode + elasticsearch)
+
+    Returns:
+        Formatted terraform.tfvars content
+    """
+    content = f"""# Lab3 Configuration
+zapier_sse_endpoint = "{zapier_endpoint}"
+workshop_mode = {str(workshop_mode).lower()}
 """
+
+    # Add vector_db selection (always write when not default)
+    if vector_db and vector_db != "mongodb":
+        content += f'vector_db = "{vector_db}"\n'
+
+    # Elasticsearch credentials (when using elasticsearch)
+    if vector_db == "elasticsearch":
+        if elasticsearch_endpoint:
+            content += f'elasticsearch_endpoint_lab3 = "{elasticsearch_endpoint}"\n'
+        if elasticsearch_api_key:
+            content += f'elasticsearch_api_key_lab3 = "{elasticsearch_api_key}"\n'
+        if elasticsearch_index:
+            content += f'elasticsearch_index_lab3 = "{elasticsearch_index}"\n'
+
+    return content
 
 
 def write_tfvars_for_deployment(
@@ -218,12 +291,52 @@ def write_tfvars_for_deployment(
 
     # Lab2 terraform.tfvars
     if "lab2-vector-search" in envs_to_deploy:
+        # Vector database selection
+        vector_db = get_credential_value(creds, "vector_db") or "mongodb"
+
+        # MongoDB credentials
         mongo_conn = get_credential_value(creds, "mongodb_connection_string")
         mongo_user = get_credential_value(creds, "mongodb_username")
         mongo_pass = get_credential_value(creds, "mongodb_password")
 
-        if mongo_conn and mongo_user and mongo_pass:
-            lab2_tfvars_path = root / cloud / "lab2-vector-search" / "terraform.tfvars"
-            content = generate_lab2_tfvars_content(mongo_conn, mongo_user, mongo_pass)
-            if write_tfvars_file(lab2_tfvars_path, content):
-                print(f"✓ Wrote {lab2_tfvars_path}")
+        # Elasticsearch credentials (using HTTP Sink V2 with API key header)
+        elasticsearch_endpoint = get_credential_value(creds, "elasticsearch_endpoint")
+        elasticsearch_api_key = get_credential_value(creds, "elasticsearch_api_key")
+        elasticsearch_index = get_credential_value(creds, "elasticsearch_index")
+
+        lab2_tfvars_path = root / cloud / "lab2-vector-search" / "terraform.tfvars"
+        content = generate_lab2_tfvars_content(
+            mongo_conn, mongo_user, mongo_pass,
+            vector_db,
+            elasticsearch_endpoint, elasticsearch_api_key, elasticsearch_index
+        )
+        if write_tfvars_file(lab2_tfvars_path, content):
+            print(f"✓ Wrote {lab2_tfvars_path}")
+
+    # Lab3 terraform.tfvars
+    if "lab3-agentic-fleet-management" in envs_to_deploy:
+        zapier_endpoint = get_credential_value(creds, "zapier_sse_endpoint")
+
+        # Workshop mode parameters
+        workshop_mode_str = get_credential_value(creds, "workshop_mode")
+        workshop_mode = workshop_mode_str == "true" if workshop_mode_str else False
+
+        # Vector database selection
+        vector_db = get_credential_value(creds, "vector_db") or "mongodb"
+        # Try both old (_lab3) and new variable names for backwards compatibility
+        elasticsearch_endpoint = get_credential_value(creds, "elasticsearch_endpoint") or get_credential_value(creds, "elasticsearch_endpoint_lab3")
+        elasticsearch_api_key = get_credential_value(creds, "elasticsearch_api_key") or get_credential_value(creds, "elasticsearch_api_key_lab3")
+        elasticsearch_index = get_credential_value(creds, "elasticsearch_index") or get_credential_value(creds, "elasticsearch_index_lab3")
+
+        if zapier_endpoint:
+            lab3_tfvars_path = root / cloud / "lab3-agentic-fleet-management" / "terraform.tfvars"
+            content = generate_lab3_tfvars_content(
+                zapier_endpoint,
+                workshop_mode,
+                vector_db,
+                elasticsearch_endpoint,
+                elasticsearch_api_key,
+                elasticsearch_index
+            )
+            if write_tfvars_file(lab3_tfvars_path, content):
+                print(f"✓ Wrote {lab3_tfvars_path}")

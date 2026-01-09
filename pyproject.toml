@@ -61,6 +61,9 @@ dev = [
 mongodb = [
     "pymongo>=4.0.0,<5.0",
 ]
+elasticsearch = [
+    "elasticsearch>=8.0.0,<9.0",
+]
 
 
 [project.scripts]
@@ -78,6 +81,9 @@ publish-docs = "scripts.publish_docs:main"
 #
 clear_mongodb = "scripts.common.clear_mongodb:main"
 clear-mongodb = "scripts.common.clear_mongodb:main"
+#
+clear_elasticsearch = "scripts.common.clear_elasticsearch:main"
+clear-elasticsearch = "scripts.common.clear_elasticsearch:main"
 #
 lab2_publish_queries = "scripts.lab2_publish_queries:main"
 publish_queries = "scripts.lab2_publish_queries:main"

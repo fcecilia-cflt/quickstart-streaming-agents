@@ -5,15 +5,37 @@ Uses credentials from credentials.env or credentials.json for destruction via Te
 """
 
 import argparse
+import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from .credentials import load_or_create_credentials_file, load_credentials_json
+from .elasticsearch_connector import delete_elasticsearch_connector_by_name
 from .terraform import get_project_root
 from .terraform_runner import run_terraform_destroy
 from .ui import prompt_choice
+
+
+def get_terraform_outputs(env_path):
+    """Get Terraform outputs as a dictionary."""
+    result = subprocess.run(
+        ["terraform", "output", "-json"],
+        cwd=env_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        return {}
+
+    try:
+        outputs = json.loads(result.stdout)
+        # Extract values from Terraform output format {"key": {"value": "..."}}
+        return {k: v.get("value") for k, v in outputs.items()}
+    except json.JSONDecodeError:
+        return {}
 
 
 def cleanup_terraform_artifacts(env_path: Path) -> None:
@@ -170,12 +192,26 @@ def main():
         if not env_path.exists():
             print(f"⊘ Skipping {env}: directory does not exist")
             continue
-        
+
         # Check if terraform state exists (indicates it was deployed)
         state_file = env_path / "terraform.tfstate"
         if not state_file.exists():
             print(f"⊘ Skipping {env}: no terraform state found (never deployed)")
             continue
+
+        # TEMPORARY WORKAROUND: Delete CLI-created Elasticsearch connector
+        # Since connector is created via CLI (not Terraform), we must delete it manually.
+        # TODO: Remove when Elasticsearch Sink V2 supports API key auth via Terraform.
+        # See: scripts/common/elasticsearch_connector.py
+        if env == "lab2-vector-search":
+            core_path = root / cloud / "core"
+            core_outputs = get_terraform_outputs(core_path)
+            if core_outputs:
+                env_id = core_outputs.get("confluent_environment_id")
+                cluster_id = core_outputs.get("confluent_kafka_cluster_id")
+                if env_id and cluster_id:
+                    print(f"\n→ Cleaning up Elasticsearch connector (if exists)...")
+                    delete_elasticsearch_connector_by_name(env_id, cluster_id)
 
         print(f"\n→ Destroying {env}...")
         if run_terraform_destroy(env_path):
