@@ -72,8 +72,5 @@ variable "elasticsearch_api_key" {
 variable "elasticsearch_index" {
   description = "Elasticsearch index name for vector storage"
   type        = string
-  default     = "documents-vector"
+  default     = "documents_embed"
 }
-
-# Note: elasticsearch_connector_username/password removed
-# Using HTTP Sink V2 with API key in Authorization header instead

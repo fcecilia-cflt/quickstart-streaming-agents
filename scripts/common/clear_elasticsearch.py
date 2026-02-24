@@ -76,7 +76,7 @@ def extract_elasticsearch_credentials(cloud_provider: str, project_root: Path) -
 
     # Set defaults if not found
     if 'index' not in credentials:
-        credentials['index'] = 'documents-vector'
+        credentials['index'] = 'documents_embed'
 
     # Check if Elasticsearch is configured
     if credentials.get('vector_db') != 'elasticsearch':
@@ -94,7 +94,7 @@ def extract_elasticsearch_credentials(cloud_provider: str, project_root: Path) -
 def clear_elasticsearch_index(
     endpoint: str,
     api_key: str,
-    index: str = "documents-vector"
+    index: str = "documents_embed"
 ) -> int:
     """
     Clear all documents from Elasticsearch index using REST API.
@@ -102,7 +102,7 @@ def clear_elasticsearch_index(
     Args:
         endpoint: Elasticsearch endpoint URL
         api_key: Elasticsearch API key
-        index: Index name (default: documents-vector)
+        index: Index name (default: documents_embed)
 
     Returns:
         Number of documents deleted

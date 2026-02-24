@@ -402,19 +402,40 @@ resource "confluent_flink_connection" "elasticsearch_connection" {
   }
 }
 
-# TEMPORARY WORKAROUND: Elasticsearch connector created via CLI (not Terraform)
-#
-# Why: HTTP Sink V2 API key authentication only works via Confluent CLI.
-#      The Terraform API silently rejects all auth-related properties.
-#      Elasticsearch Sink Connector doesn't support API keys (only username/password).
-#
-# What: deploy.py creates the connector after Terraform completes.
-#       destroy.py deletes the connector before Terraform destroy.
-#
-# TODO: Switch to Terraform-managed Elasticsearch Sink V2 when it supports
-#       API key authentication. Remove CLI workaround from deploy.py/destroy.py.
-#
-# See: scripts/common/elasticsearch_connector.py
+# Elasticsearch Sink V2 Connector for streaming documents_embed to Elasticsearch (only when vector_db = elasticsearch)
+resource "confluent_connector" "elasticsearch_sink" {
+  count = !var.workshop_mode && var.vector_db == "elasticsearch" ? 1 : 0
+
+  environment {
+    id = data.terraform_remote_state.core.outputs.confluent_environment_id
+  }
+
+  kafka_cluster {
+    id = data.terraform_remote_state.core.outputs.confluent_kafka_cluster_id
+  }
+
+  config_sensitive = {
+    "api.key.value"    = var.elasticsearch_api_key
+    "kafka.api.key"    = data.terraform_remote_state.core.outputs.app_manager_kafka_api_key
+    "kafka.api.secret" = data.terraform_remote_state.core.outputs.app_manager_kafka_api_secret
+  }
+
+  config_nonsensitive = {
+    "connector.class"            = "ElasticsearchSinkV2"
+    "name"                       = "elasticsearch-sink"
+    "topics"                     = "documents_embed"
+    "input.data.format"          = "AVRO"
+    "connection.url"             = var.elasticsearch_endpoint
+    "auth.type"                  = "API_KEY"
+    "key.ignore"                 = "true"
+    "auto.create"                = "true"
+    "tasks.max"                  = "1"
+  }
+
+  depends_on = [
+    confluent_flink_statement.documents_embed_table[0]
+  ]
+}
 
 # Create documents_vectordb table (Elasticsearch vector store external table) - only when vector_db = elasticsearch
 resource "confluent_flink_statement" "documents_vectordb_elasticsearch" {
@@ -462,6 +483,7 @@ resource "confluent_flink_statement" "documents_vectordb_elasticsearch" {
 
   depends_on = [
     confluent_flink_connection.elasticsearch_connection[0],
+    confluent_connector.elasticsearch_sink[0],
     confluent_flink_statement.documents_insert_sample[0]
   ]
 }

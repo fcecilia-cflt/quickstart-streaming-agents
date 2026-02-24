@@ -20,6 +20,7 @@ All of this runs in real time on **Confluent Cloud for Apache Flink**, with no e
 - Vector database - choose one:
   - MongoDB Atlas ([Setup guide](./assets/pre-setup/MongoDB-Setup.md)) - recommended, free tier available
   - Elasticsearch ([Setup guide](./assets/pre-setup/Elasticsearch-Setup.md)) - 14-day trial available
+    - **Important**: You must complete **Step 4** (Create Vector Search Index) before deploying. The `documents_embed` index must be pre-created with the `dense_vector` mapping — otherwise Flink queries will fail.
 - ⚠️ **IMPORTANT: AWS Users Only:** To access Claude Sonnet 3.7 you must request access to the model by filling out an Anthropic use case form (or someone in your org must have previously done so) for your cloud region. To do so, visit the [Model Catalog](https://console.aws.amazon.com/bedrock/home#/model-catalog), select Claude 3.7 Sonnet and open it it in the Playground, then send a message in the chat - the form will appear automatically. ⚠️
 
 ## Deploy the Demo

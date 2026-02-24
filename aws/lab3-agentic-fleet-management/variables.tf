@@ -65,5 +65,5 @@ variable "elasticsearch_api_key_lab3" {
 variable "elasticsearch_index_lab3" {
   description = "Elasticsearch index name for vector search"
   type        = string
-  default     = "documents-vector"
+  default     = "documents_embed"
 }

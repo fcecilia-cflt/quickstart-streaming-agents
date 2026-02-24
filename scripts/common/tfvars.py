@@ -181,7 +181,7 @@ def generate_lab2_tfvars_content(
             content += f'mongodb_password = "{mongo_pass}"\n'
     elif vector_db == "elasticsearch":
         # Elasticsearch configuration
-        # Note: Using HTTP Sink V2 with API key in Authorization header
+        # Elasticsearch Sink V2 connector with API key auth
         if elasticsearch_endpoint:
             content += f'elasticsearch_endpoint = "{elasticsearch_endpoint}"\n'
         if elasticsearch_api_key:
@@ -299,7 +299,7 @@ def write_tfvars_for_deployment(
         mongo_user = get_credential_value(creds, "mongodb_username")
         mongo_pass = get_credential_value(creds, "mongodb_password")
 
-        # Elasticsearch credentials (using HTTP Sink V2 with API key header)
+        # Elasticsearch credentials
         elasticsearch_endpoint = get_credential_value(creds, "elasticsearch_endpoint")
         elasticsearch_api_key = get_credential_value(creds, "elasticsearch_api_key")
         elasticsearch_index = get_credential_value(creds, "elasticsearch_index")

@@ -38,7 +38,7 @@ The API key format is typically: `base64_encoded_id:api_key`
 Before deploying, create the index with dense_vector
 
 ```bash
-curl -X PUT "https://YOUR_ENDPOINT/documents-vector" \
+curl -X PUT "https://YOUR_ENDPOINT/documents_embed" \
   -H "Authorization: ApiKey YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -60,7 +60,7 @@ curl -X PUT "https://YOUR_ENDPOINT/documents-vector" \
 ## Step 5: Verify Index Creation
 
 ```bash
-curl -X GET "https://YOUR_ENDPOINT/documents-vector/_mapping" \
+curl -X GET "https://YOUR_ENDPOINT/documents_embed/_mapping" \
   -H "Authorization: ApiKey YOUR_API_KEY"
 ```
 
@@ -85,7 +85,7 @@ uv run deploy
 |---------|-------|
 | Endpoint | `https://your-cluster.es.region.cloud-provider.elastic-cloud.com:443` |
 | API Key | Your generated API key |
-| Index Name | `documents-vector` (default) |
+| Index Name | `documents_embed` (default) |
 | Vector Dimensions | 1536 (OpenAI embeddings) |
 | Similarity | cosine |
 
