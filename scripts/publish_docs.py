@@ -412,18 +412,20 @@ def find_docs_directory(project_root: Path, lab: int, cloud_provider: str) -> Op
     return None
 
 
-def detect_vector_db(cloud_provider: str, project_root: Path) -> str:
+def detect_vector_db(cloud_provider: str, project_root: Path, lab: int = 3) -> str:
     """
-    Detect which vector database is configured for Lab3.
+    Detect which vector database is configured for a given lab.
 
     Args:
         cloud_provider: Cloud provider (aws or azure)
         project_root: Project root directory
+        lab: Lab number (2 or 3)
 
     Returns:
         'mongodb' or 'elasticsearch' (defaults to 'mongodb')
     """
-    tfvars_path = project_root / cloud_provider / "lab3-agentic-fleet-management" / "terraform.tfvars"
+    lab_dir = "lab2-vector-search" if lab == 2 else "lab3-agentic-fleet-management"
+    tfvars_path = project_root / cloud_provider / lab_dir / "terraform.tfvars"
 
     if not tfvars_path.exists():
         return "mongodb"
@@ -444,7 +446,7 @@ def detect_vector_db(cloud_provider: str, project_root: Path) -> str:
     return "mongodb"
 
 
-def prompt_clear_elasticsearch(cloud_provider: str, project_root: Path, logger: logging.Logger) -> bool:
+def prompt_clear_elasticsearch(cloud_provider: str, project_root: Path, logger: logging.Logger, lab: int = 3) -> bool:
     """
     Prompt user to clear Elasticsearch index and perform clearing if confirmed.
 
@@ -452,6 +454,7 @@ def prompt_clear_elasticsearch(cloud_provider: str, project_root: Path, logger: 
         cloud_provider: Cloud provider (aws or azure)
         project_root: Project root directory
         logger: Logger instance
+        lab: Lab number (2 or 3)
 
     Returns:
         True if successful or skipped, False if failed
@@ -473,7 +476,7 @@ def prompt_clear_elasticsearch(cloud_provider: str, project_root: Path, logger: 
     # User wants to clear - proceed with clearing
     try:
         logger.info("Extracting Elasticsearch credentials...")
-        es_creds = extract_elasticsearch_credentials(cloud_provider, project_root)
+        es_creds = extract_elasticsearch_credentials(cloud_provider, project_root, lab)
 
         logger.info(f"Connecting to Elasticsearch (index: {es_creds['index']})...")
         deleted_count = clear_elasticsearch_index(
@@ -700,19 +703,12 @@ Examples:
 
     # Prompt to clear vector database (if not in dry-run mode)
     if not args.dry_run:
-        # For Lab3, detect which vector database is configured
-        if lab == 3:
-            vector_db = detect_vector_db(cloud_provider, project_root)
-            if vector_db == "elasticsearch":
-                if not prompt_clear_elasticsearch(cloud_provider, project_root, logger):
-                    logger.error("Elasticsearch clearing failed")
-                    return 1
-            else:
-                if not prompt_clear_mongodb(cloud_provider, project_root, logger):
-                    logger.error("MongoDB clearing failed")
-                    return 1
+        vector_db = detect_vector_db(cloud_provider, project_root, lab)
+        if vector_db == "elasticsearch":
+            if not prompt_clear_elasticsearch(cloud_provider, project_root, logger, lab):
+                logger.error("Elasticsearch clearing failed")
+                return 1
         else:
-            # Lab2 always uses MongoDB
             if not prompt_clear_mongodb(cloud_provider, project_root, logger):
                 logger.error("MongoDB clearing failed")
                 return 1

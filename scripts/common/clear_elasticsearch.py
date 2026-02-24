@@ -33,13 +33,14 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logging.getLogger(__name__)
 
 
-def extract_elasticsearch_credentials(cloud_provider: str, project_root: Path) -> Dict[str, str]:
+def extract_elasticsearch_credentials(cloud_provider: str, project_root: Path, lab: int = 3) -> Dict[str, str]:
     """
     Extract Elasticsearch credentials from terraform.tfvars.
 
     Args:
         cloud_provider: Cloud provider (aws or azure)
         project_root: Project root directory
+        lab: Lab number (2 or 3)
 
     Returns:
         Dictionary with Elasticsearch connection details
@@ -47,12 +48,18 @@ def extract_elasticsearch_credentials(cloud_provider: str, project_root: Path) -
     Raises:
         Exception if credentials cannot be extracted
     """
-    tfvars_path = project_root / cloud_provider / "lab3-agentic-fleet-management" / "terraform.tfvars"
+    lab_dir = "lab2-vector-search" if lab == 2 else "lab3-agentic-fleet-management"
+    tfvars_path = project_root / cloud_provider / lab_dir / "terraform.tfvars"
 
     if not tfvars_path.exists():
         raise Exception(f"terraform.tfvars not found at {tfvars_path}")
 
     credentials = {}
+
+    # Lab2 uses unsuffixed variable names, Lab3 uses _lab3 suffix
+    endpoint_keys = ['elasticsearch_endpoint', 'elasticsearch_endpoint_lab3']
+    api_key_keys = ['elasticsearch_api_key', 'elasticsearch_api_key_lab3']
+    index_keys = ['elasticsearch_index', 'elasticsearch_index_lab3']
 
     with open(tfvars_path, 'r') as f:
         for line in f:
@@ -65,11 +72,11 @@ def extract_elasticsearch_credentials(cloud_provider: str, project_root: Path) -
                 key = key.strip()
                 value = value.strip().strip('"').strip("'")
 
-                if key == 'elasticsearch_endpoint_lab3':
+                if key in endpoint_keys:
                     credentials['endpoint'] = value
-                elif key == 'elasticsearch_api_key_lab3':
+                elif key in api_key_keys:
                     credentials['api_key'] = value
-                elif key == 'elasticsearch_index_lab3':
+                elif key in index_keys:
                     credentials['index'] = value
                 elif key == 'vector_db':
                     credentials['vector_db'] = value
