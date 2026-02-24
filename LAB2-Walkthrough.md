@@ -2,7 +2,11 @@
 
 In this lab, we'll create a Retrieval-Augmented Generation (RAG) pipeline using Confluent Cloud for Apache Flink's vector search capabilities. The pipeline processes documents, creates embeddings, and enables semantic search to power intelligent responses through retrieval of relevant context.
 
-<img src="./assets/lab2/00_lab2_architecture.png" alt="Lab2 Architecture Diagram"/>
+### MongoDB Architecture
+<img src="./assets/lab2/00_lab2_architecture.png" alt="Lab2 Architecture Diagram — MongoDB"/>
+
+### Elasticsearch Architecture
+<img src="./assets/lab2/00_lab2_architecture_elastic.png" alt="Lab2 Architecture Diagram — Elasticsearch"/>
 
 ## Prerequisites
 - Vector database - choose one:
@@ -28,23 +32,29 @@ pip install . && python deploy.py
 
 </details>
 
-During deployment, you'll be prompted to provide 3 MongoDB variables:
+You'll be prompted to select your vector database (MongoDB or Elasticsearch).
+
+**If you chose MongoDB**, you'll be prompted to provide 3 variables:
 - `mongodb_connection_string`: The connection URL from [Step 5](./assets/pre-setup/MongoDB-Setup.md#step-1-create-mongodb-atlas-account-and-cluster) of MongoDB setup (e.g., `mongodb+srv://cluster0.abc123.mongodb.net`)
 - `mongodb_username`: The database-specific username you created in [Step 4](./assets/pre-setup/MongoDB-Setup.md#step-1-create-mongodb-atlas-account-and-cluster) (*different* from what you use to login to MongoDB)
 - `mongodb_password`: The database-specific password you created in [Step 4](./assets/pre-setup/MongoDB-Setup.md#step-1-create-mongodb-atlas-account-and-cluster)
 
+**If you chose Elasticsearch**, you'll be prompted to provide 2 variables:
+- `elasticsearch_endpoint`: The Elasticsearch endpoint URL from [Step 2](./assets/pre-setup/Elasticsearch-Setup.md) of the Elasticsearch setup
+- `elasticsearch_api_key`: The API key from [Step 3](./assets/pre-setup/Elasticsearch-Setup.md) of the Elasticsearch setup
+
 Successful deployment creates the complete RAG pipeline:
-- **6 Flink tables** for the document-to-response flow (intentionally in alphabetical order from beginning to end of pipeline, to keep things tidy!):
-  - `documents` 
+- **Flink tables** for the document-to-response flow:
+  - `documents`
   - `documents_embed`
-  - `documents_vectordb` 
+  - `documents_mongodb` (MongoDB) or `documents_elastic` (Elasticsearch)
   - `queries`
   - `queries_embed`
   - `search_results`
   - `search_results_response`
 
 - **LLM models** for embeddings and text generation: `llm_textgen_model` and `llm_embedding_model`
-- **MongoDB sink connector** to stream embeddings from `documents_embed` to Atlas
+- **Sink connector** to stream embeddings from `documents_embed` to your vector database (MongoDB Sink or Elasticsearch Sink)
 
 ## Using the RAG Pipeline
 
@@ -68,7 +78,7 @@ python scripts/lab2_publish_docs.py
 
 This publishes pre-chunked Flink documentation that gets:
 1. **Embedded** using the LLM embedding model
-2. **Stored** in MongoDB Atlas with vector search index
+2. **Stored** in your vector database (MongoDB Atlas or Elasticsearch) via the sink connector
 3. **Made searchable** for semantic queries
 
 ### Query the RAG System
@@ -140,10 +150,15 @@ SELECT query, response FROM search_results_response LIMIT 5;
 - **No vector search**: Confirm Atlas vector search index `vector_index` is active. Check that the type of search index is in fact an "Atlas **Vector** Search index" and not just an "Atlas Search index." Check that the JSON configuration matches the config in [step 9](./assets/pre-setup/MongoDB-Setup.md#9-scroll-down-to-the-bottom-and-choose-json-editor-enter-the-following).
 - **Wrong credentials**: Use *database* username and password (not the credentials you use to login to MongoDB.com).
 
+### Elasticsearch Issues
+- **Flink 400 errors on vector search**: The `documents_embed` index was not pre-created with the correct mapping. The Elasticsearch Sink connector auto-creates the index with a plain float array for `embedding` instead of `dense_vector`. You must complete [Step 4](./assets/pre-setup/Elasticsearch-Setup.md) of the Elasticsearch setup guide before deploying.
+- **Connection failed**: Verify your `elasticsearch_endpoint` URL and `elasticsearch_api_key` are correct.
+- **Index not found**: Ensure the index name is `documents_embed` (the default).
+
 ### Common Fixes
 1. **Pipeline not processing**: Wait 30-60 seconds after publishing documents
 2. **No query responses**: Check that LLM models are deployed in core infrastructure. [Run test query #1 found here](./LAB1-Walkthrough.md#test-query-1-base-llm-model) to ensure the `llm_textgen_model` is working properly.
-3. **Empty results**: Verify MongoDB sink connector status in Confluent Cloud
+3. **Empty results**: Verify your sink connector status in Confluent Cloud (MongoDB Sink or Elasticsearch Sink)
 
 </details>
 
